@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spiking Network: float vs 8-bit fixed-point</title>
+<style>
+  :root {
+    --bg: #f4f6f5;
+    --text: #1c2622;
+    --muted: #5f6e68;
+    --card: #ffffff;
+    --border: #d5ded9;
+    --exc: #1b6b5a;
+    --inh: #c2410c;
+    --accent: #7c3aed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1714;
+      --text: #e6efeb;
+      --muted: #93a69d;
+      --card: #17221e;
+      --border: #2a3a34;
+      --exc: #4fd1b0;
+      --inh: #fb923c;
+      --accent: #a78bfa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Georgia, serif;
+    line-height: 1.5;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { margin-bottom: 4px; }
+  .intro { color: var(--muted); margin-top: 0; }
+  .box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .box h2 { font-size: 1.1rem; margin: 0 0 8px; }
+  canvas { width: 100%; height: 230px; display: block; }
+  .stats, .buttons, .legend {
+    font-family: sans-serif;
+    font-size: 14px;
+    margin-top: 8px;
+    color: var(--muted);
+  }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 0; }
+  .legend span { margin-right: 14px; }
+  .legend .e { color: var(--exc); }
+  .legend .i { color: var(--inh); }
+  .controls { display: grid; gap: 14px; }
+  @media (min-width: 640px) { .controls { grid-template-columns: repeat(2, 1fr); } }
+  label {
+    display: flex;
+    justify-content: space-between;
+    font-family: sans-serif;
+    font-weight: bold;
+    font-size: 14px;
+  }
+  label span { color: var(--exc); font-weight: normal; }
+  input[type=range] { width: 100%; accent-color: var(--exc); }
+  input[type=number], select {
+    font: inherit;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--card);
+    color: var(--text);
+  }
+  small { display: block; color: var(--muted); font-size: 13px; }
+  button {
+    font: inherit;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+  }
+  #compare { font-family: sans-serif; font-size: 15px; margin: 0; }
+  code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+  li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Spiking Network: float vs 8-bit fixed-point</h1>
+  <p class="intro">
+    50 leaky integrate-and-fire neurons with random connections, driven by random input spikes.
+    The same network runs twice on identical input: once with ordinary decimal numbers, once with small
+    integers like a hardware chip would use. Change the number of bits and watch how the behaviour changes.
+  </p>
+
+  <div class="box">
+    <p id="compare"></p>
+  </div>
+
+  <div class="box">
+    <h2>Float (decimal numbers)</h2>
+    <canvas id="floatPlot" role="img" aria-label="Raster plot of the float network"></canvas>
+    <div class="stats" id="floatStats"></div>
+  </div>
+
+  <div class="box">
+    <h2>Fixed-point (integers)</h2>
+    <canvas id="fixedPlot" role="img" aria-label="Raster plot of the fixed-point network"></canvas>
+    <div class="stats" id="fixedStats"></div>
+    <div class="legend">
+      <span class="e">&#9632; excitatory neuron</span>
+      <span class="i">&#9632; inhibitory neuron</span>
+      <span>Each dot is a spike. Bars at the bottom: spikes per step.</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <div class="buttons">
+      <button id="pauseBtn">Pause</button>
+      <button id="stepBtn">Step once</button>
+      <button id="resetBtn">Restart</button>
+    </div>
+  </div>
+
+  <div class="box controls">
+    <div>
+      <label for="rate">Input spike rate <span id="rateVal"></span></label>
+      <input id="rate" type="range" min="0.02" max="0.3" step="0.01" value="0.1">
+      <small>Chance per step that a neuron gets an outside spike.</small>
+    </div>
+    <div>
+      <label for="exc">Excitatory weight <span id="excVal"></span></label>
+      <input id="exc" type="range" min="0.1" max="1" step="0.05" value="0.3">
+      <small>How strongly an excitatory spike pushes its targets.</small>
+    </div>
+    <div>
+      <label for="inh">Inhibitory weight <span id="inhVal"></span></label>
+      <input id="inh" type="range" min="0.2" max="2" step="0.05" value="0.6">
+      <small>How strongly an inhibitory spike pulls its targets down.</small>
+    </div>
+    <div>
+      <label for="kshift">Leak shift K <span id="kVal"></span></label>
+      <input id="kshift" type="range" min="2" max="6" step="1" value="4">
+      <small>Each step the neuron loses 1/2^K of its charge, so beta = 1 - 1/2^K. Both networks use this beta.</small>
+    </div>
+    <div>
+      <label for="bits">Weight bits <span id="bitsVal"></span></label>
+      <input id="bits" type="range" min="3" max="8" step="1" value="8">
+      <small>Fewer bits means coarser weights in the fixed-point network.</small>
+    </div>
+    <div>
+      <label for="vbits">Membrane bits</label>
+      <select id="vbits">
+        <option value="16" selected>16 bit</option>
+        <option value="8">8 bit (saturates easily)</option>
+      </select>
+      <small>Range of the stored membrane potential.</small>
+    </div>
+    <div>
+      <label for="seed">Random seed</label>
+      <input id="seed" type="number" value="42" min="1" max="999999">
+      <small>Same seed, same network and same input every time.</small>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>What to try</h2>
+    <ul>
+      <li>With defaults, both networks fire at similar rates, but the exact spike times drift apart after a few steps.</li>
+      <li>Lower the weight bits to 3 or 4. Weights get rounded to coarse values, and the fixed-point network can behave very differently.</li>
+      <li>Set membrane bits to 8 and raise the inhibitory weight. The potential hits its limits and the saturation counter climbs.</li>
+      <li>Rates are a better comparison than exact spike times, because small rounding differences grow in a recurrent network.</li>
+    </ul>
+    <p>
+      This is a teaching model with no learning in it. It is not an accurate copy of any specific chip.
+    </p>
+  </div>
+</main>
+
+<script src="snn-core.js"></script>
+<script>
+const N = 50;
+const N_EXC = 40;
+const WINDOW = 200;      // how many recent steps to draw
+const STEPS_PER_TICK = 1;
+const TICK_MS = 60;
+
+const el = (id) => document.getElementById(id);
+const rateEl = el('rate');
+const excEl = el('exc');
+const inhEl = el('inh');
+const kEl = el('kshift');
+const bitsEl = el('bits');
+const vbitsEl = el('vbits');
+const seedEl = el('seed');
+const pauseBtn = el('pauseBtn');
+
+let sim;
+let floatHist = [];
+let fixedHist = [];
+let saturations = 0;
+let stepCount = 0;
+let matchedSteps = 0;
+let firstDivergence = -1;
+let paused = false;
+
+function readParams() {
+  return {
+    n: N,
+    nExc: N_EXC,
+    prob: 0.1,
+    excW: Number(excEl.value),
+    inhW: Number(inhEl.value),
+    extW: 0.5,
+    inputRate: Number(rateEl.value),
+    K: Number(kEl.value),
+    bits: Number(bitsEl.value),
+    vBits: Number(vbitsEl.value),
+    seed: parseInt(seedEl.value, 10) || 1,
+  };
+}
+
+function updateLabels() {
+  const beta = 1 - 1 / Math.pow(2, Number(kEl.value));
+  el('rateVal').textContent = Number(rateEl.value).toFixed(2);
+  el('excVal').textContent = Number(excEl.value).toFixed(2);
+  el('inhVal').textContent = Number(inhEl.value).toFixed(2);
+  el('kVal').textContent = `K=${kEl.value}, beta=${beta.toFixed(4)}`;
+  el('bitsVal').textContent = `${bitsEl.value} bit`;
+}
+
+function restart() {
+  sim = createSim(readParams());
+  floatHist = [];
+  fixedHist = [];
+  saturations = 0;
+  stepCount = 0;
+  matchedSteps = 0;
+  firstDivergence = -1;
+}
+
+function sameSpikes(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function advance() {
+  const r = sim.step();
+  stepCount = r.t;
+  saturations = r.saturations;
+
+  floatHist.push(r.floatSpikes);
+  fixedHist.push(r.fixedSpikes);
+  if (floatHist.length > WINDOW) {
+    floatHist.shift();
+    fixedHist.shift();
+  }
+
+  if (firstDivergence < 0) {
+    if (sameSpikes(r.floatSpikes, r.fixedSpikes)) matchedSteps++;
+    else firstDivergence = r.t;
+  }
+}
+
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function drawRaster(canvas, hist) {
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+  const w = rect.width;
+  const h = rect.height;
+  const left = 26;
+  const barsH = 40;
+  const rasterH = h - barsH - 10;
+  const colW = (w - left) / WINDOW;
+  const rowH = rasterH / N;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = css('--muted');
+  ctx.fillText('0', 6, 10);
+  ctx.fillText(String(N_EXC), 4, (N_EXC * rowH) + 4);
+
+  // divider between excitatory and inhibitory neurons
+  ctx.strokeStyle = css('--border');
+  ctx.beginPath();
+  ctx.moveTo(left, N_EXC * rowH);
+  ctx.lineTo(w, N_EXC * rowH);
+  ctx.stroke();
+
+  const offset = WINDOW - hist.length;   // newest step sits at the right edge
+  const counts = [];
+  hist.forEach((spikes, t) => {
+    const x = left + (offset + t) * colW;
+    let count = 0;
+    for (let i = 0; i < N; i++) {
+      if (!spikes[i]) continue;
+      count++;
+      ctx.fillStyle = i < N_EXC ? css('--exc') : css('--inh');
+      ctx.fillRect(x, i * rowH, Math.max(1.5, colW), Math.max(1.5, rowH - 0.5));
+    }
+    counts.push(count);
+  });
+
+  // spikes per step as small bars
+  ctx.fillStyle = css('--accent');
+  counts.forEach((c, t) => {
+    const x = left + (offset + t) * colW;
+    const bar = (c / N) * barsH * 2;
+    const barH = Math.min(barsH, bar);
+    ctx.fillRect(x, h - barH, Math.max(1.5, colW), barH);
+  });
+}
+
+function windowStats(hist) {
+  let spikes = 0;
+  hist.forEach((s) => s.forEach((v) => { spikes += v; }));
+  const rate = hist.length ? (spikes / (hist.length * N)) * 100 : 0;
+  return { spikes, rate };
+}
+
+function updateReadouts() {
+  const f = windowStats(floatHist);
+  const q = windowStats(fixedHist);
+  el('floatStats').textContent =
+    `Spikes in view: ${f.spikes} | mean rate: ${f.rate.toFixed(1)}% of neurons per step | step ${stepCount}`;
+  el('fixedStats').textContent =
+    `Spikes in view: ${q.spikes} | mean rate: ${q.rate.toFixed(1)}% of neurons per step | ` +
+    `saturation events so far: ${saturations}`;
+
+  const diff = q.rate - f.rate;
+  const sign = diff >= 0 ? '+' : '';
+  const where = firstDivergence < 0
+    ? `Identical spikes for all ${matchedSteps} steps so far.`
+    : `Spike trains first differed at step ${firstDivergence}.`;
+  el('compare').textContent = `${where} Rate difference (fixed minus float): ${sign}${diff.toFixed(1)} percentage points.`;
+}
+
+function render() {
+  drawRaster(el('floatPlot'), floatHist);
+  drawRaster(el('fixedPlot'), fixedHist);
+  updateReadouts();
+}
+
+[rateEl, excEl, inhEl, kEl, bitsEl].forEach((c) => {
+  c.addEventListener('input', () => { updateLabels(); restart(); });
+});
+vbitsEl.addEventListener('change', restart);
+seedEl.addEventListener('change', restart);
+
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Play' : 'Pause';
+});
+el('stepBtn').addEventListener('click', () => { advance(); });
+el('resetBtn').addEventListener('click', restart);
+
+let lastTick = 0;
+function loop(time) {
+  if (!paused && time - lastTick > TICK_MS) {
+    for (let i = 0; i < STEPS_PER_TICK; i++) advance();
+    lastTick = time;
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+updateLabels();
+restart();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
