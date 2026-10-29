@@ -2,6 +2,8 @@
 
 A small, browser-based spiking neural network that runs twice on identical input: once with ordinary floating-point numbers and once with 8-bit fixed-point integers, so you can see what limited precision does to a network.
 
+**Live demo:** https://spiyk.github.io/snn-network-playground/
+
 ## What it shows
 
 - 50 leaky integrate-and-fire neurons (40 excitatory, 10 inhibitory) with random connections
