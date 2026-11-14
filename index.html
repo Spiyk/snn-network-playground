@@ -89,9 +89,44 @@
   #compare { font-family: sans-serif; font-size: 15px; margin: 0; }
   code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
   li { margin-bottom: 4px; }
+
+  /* shared Spiyk menu (same look as the main site) */
+  html { overflow-y: scroll; scrollbar-gutter: stable; }
+  .site-header, .site-sub {
+    --sh-text: #1a2420; --sh-muted: #5d6c66; --sh-accent: #1b6b5a; --sh-border: #d6dfdb;
+    max-width: 860px; margin: 0 auto; padding: 0 16px; font-family: sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    .site-header, .site-sub {
+      --sh-text: #e5eeea; --sh-muted: #92a59c; --sh-accent: #4fd1b0; --sh-border: #2a3a34;
+    }
+  }
+  .site-header {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+    padding-top: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--sh-border);
+  }
+  .site-logo { font-weight: bold; font-size: 20px; letter-spacing: 1px; text-decoration: none; color: var(--sh-accent); }
+  .site-header nav { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+  .site-header nav a { text-decoration: none; color: var(--sh-muted); }
+  .site-header nav a:hover, .site-header nav a.here { color: var(--sh-accent); }
+  .site-sub { margin-top: 10px; font-size: 14px; color: var(--sh-muted); }
+  .site-sub a { color: var(--sh-accent); }
 </style>
 </head>
 <body>
+<header class="site-header">
+  <a class="site-logo" href="https://spiyk.github.io/">SPIYK</a>
+  <nav>
+    <a href="https://spiyk.github.io/">Home</a>
+    <a href="https://spiyk.github.io/learning-path.html">Learning path</a>
+    <a href="https://spiyk.github.io/lif-neuron-playground/">Neuron playground</a>
+    <a href="https://spiyk.github.io/snn-network-playground/" class="here" aria-current="page">Network playground</a>
+    <a href="https://spiyk.github.io/roadmap.html">Roadmap</a>
+    <a href="https://github.com/spiyk">GitHub</a>
+  </nav>
+</header>
+<div class="site-sub">Related lessons: <a href="https://spiyk.github.io/lesson-4.html">4. A small network and the raster plot</a> · <a href="https://spiyk.github.io/lesson-6.html">6. Fixed-point and quantization</a></div>
+
 <main>
   <h1>Spiking Network: float vs 8-bit fixed-point</h1>
   <p class="intro">
